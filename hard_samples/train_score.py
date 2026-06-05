@@ -129,6 +129,8 @@ def score_training_samples(
     correct_by_sample: np.ndarray,
     true_prob_by_sample: np.ndarray,
     margin_by_sample: np.ndarray,
+    topk_indices_by_sample: np.ndarray | None = None,
+    topk_probs_by_sample: np.ndarray | None = None,
 ) -> float:
     model.eval()
     total_correct = 0
@@ -143,6 +145,12 @@ def score_training_samples(
         true_probs = probs.gather(1, targets.view(-1, 1)).squeeze(1)
         preds = logits.argmax(dim=1)
         correct = preds.eq(targets)
+        if topk_indices_by_sample is not None and topk_probs_by_sample is not None:
+            k = min(topk_indices_by_sample.shape[1], probs.shape[1])
+            topk_probs, topk_indices = probs.topk(k=k, dim=1)
+        else:
+            topk_probs = None
+            topk_indices = None
 
         masked_logits = logits.clone()
         masked_logits.scatter_(1, targets.view(-1, 1), float("-inf"))
@@ -160,6 +168,13 @@ def score_training_samples(
         correct_by_sample[sample_ids_np] = correct_np
         true_prob_by_sample[sample_ids_np] = true_probs_np
         margin_by_sample[sample_ids_np] = margins_np
+        if topk_indices is not None and topk_probs is not None:
+            topk_indices_by_sample[sample_ids_np, : topk_indices.shape[1]] = (
+                topk_indices.detach().cpu().numpy().astype(np.int64)
+            )
+            topk_probs_by_sample[sample_ids_np, : topk_probs.shape[1]] = (
+                topk_probs.detach().cpu().numpy().astype(np.float64)
+            )
 
         batch_records = []
         for row_index, sample_id in enumerate(sample_ids_np):
@@ -219,6 +234,9 @@ def build_final_metrics(
     true_prob_sum: np.ndarray,
     true_prob_sumsq: np.ndarray,
     margin_sum: np.ndarray,
+    topk_indices: np.ndarray,
+    topk_probs: np.ndarray,
+    class_names: list[str],
     eval_count: int,
     aum_dir: Path | None,
 ) -> pd.DataFrame:
@@ -237,6 +255,22 @@ def build_final_metrics(
     metrics["mean_true_prob"] = mean_true_prob
     metrics["std_true_prob"] = std_true_prob
     metrics["mean_margin"] = mean_margin
+    for rank in range(topk_indices.shape[1]):
+        class_ids = topk_indices[:, rank]
+        metrics[f"top{rank + 1}_pred"] = class_ids.astype(int)
+        metrics[f"top{rank + 1}_class"] = [
+            class_names[class_id] if 0 <= int(class_id) < len(class_names) else str(class_id)
+            for class_id in class_ids
+        ]
+        metrics[f"top{rank + 1}_prob"] = topk_probs[:, rank]
+    metrics["top5_predictions"] = [
+        "; ".join(
+            f"{row[f'top{rank}_class']} ({row[f'top{rank}_prob']:.3f})"
+            for rank in range(1, topk_indices.shape[1] + 1)
+            if f"top{rank}_class" in row and not pd.isna(row[f"top{rank}_prob"])
+        )
+        for _, row in metrics.iterrows()
+    ]
 
     metrics = merge_aum(metrics, aum_dir)
     metrics = add_hard_ranks(metrics)
@@ -301,6 +335,9 @@ def main() -> None:
     true_prob_sum = np.zeros(n_samples, dtype=np.float64)
     true_prob_sumsq = np.zeros(n_samples, dtype=np.float64)
     margin_sum = np.zeros(n_samples, dtype=np.float64)
+    final_topk_width = min(5, bundle.num_classes)
+    final_topk_indices = np.full((n_samples, final_topk_width), -1, dtype=np.int64)
+    final_topk_probs = np.full((n_samples, final_topk_width), np.nan, dtype=np.float64)
     eval_count = 0
 
     per_epoch_path = output_dir / "per_epoch_stats.parquet"
@@ -328,6 +365,8 @@ def main() -> None:
                 correct_by_sample=epoch_correct,
                 true_prob_by_sample=epoch_true_prob,
                 margin_by_sample=epoch_margin,
+                topk_indices_by_sample=final_topk_indices,
+                topk_probs_by_sample=final_topk_probs,
             )
 
             if epoch > 1:
@@ -352,6 +391,9 @@ def main() -> None:
         true_prob_sum=true_prob_sum,
         true_prob_sumsq=true_prob_sumsq,
         margin_sum=margin_sum,
+        topk_indices=final_topk_indices,
+        topk_probs=final_topk_probs,
+        class_names=bundle.class_names,
         eval_count=eval_count,
         aum_dir=aum_dir,
     )

@@ -166,6 +166,16 @@ df.sort_values("hard_rank").head(20)[
         "aum",
         "std_true_prob",
         "mean_margin",
+        "top1_class",
+        "top1_prob",
+        "top2_class",
+        "top2_prob",
+        "top3_class",
+        "top3_prob",
+        "top4_class",
+        "top4_prob",
+        "top5_class",
+        "top5_prob",
         "hard_rank",
         "hard_rank_rankavg",
         "hard_rank_zscore",
@@ -187,6 +197,9 @@ for path in sorted(grid_dir.glob("*.jpg")):
     print(path.name)
     display(Image(filename=str(path)))
 ```
+
+Each grid tile shows the true label plus the final top predicted classes with
+compact probabilities, for example `1. dog 0.82`.
 
 Download all results from Colab:
 
@@ -384,6 +397,15 @@ Core scores:
 - `std_true_prob`
 - `mean_margin`
 - `aum`
+
+Final top predicted classes from the last epoch's full training-set evaluation:
+
+- `top1_pred`, `top1_class`, `top1_prob`
+- `top2_pred`, `top2_class`, `top2_prob`
+- `top3_pred`, `top3_class`, `top3_prob`
+- `top4_pred`, `top4_class`, `top4_prob`
+- `top5_pred`, `top5_class`, `top5_prob`
+- `top5_predictions`
 
 Ranking fields:
 

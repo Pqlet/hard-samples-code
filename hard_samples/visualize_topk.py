@@ -40,6 +40,27 @@ def _value_text(value: Any) -> str:
     return str(value)
 
 
+def _short_text(value: Any, max_chars: int) -> str:
+    text = "" if pd.isna(value) else str(value)
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 3] + "..."
+
+
+def _top_prediction_lines(row: pd.Series, max_chars: int) -> list[str]:
+    lines = []
+    for rank in range(1, 6):
+        class_column = f"top{rank}_class"
+        prob_column = f"top{rank}_prob"
+        if class_column not in row or prob_column not in row:
+            continue
+        if pd.isna(row[prob_column]):
+            continue
+        class_name = _short_text(row[class_column], max_chars=max_chars - 9)
+        lines.append(f"{rank}. {class_name} {float(row[prob_column]):.2f}")
+    return lines
+
+
 def _path_exists(value: Any) -> bool:
     if pd.isna(value):
         return False
@@ -84,16 +105,21 @@ def _draw_label(
     method_column: str,
 ) -> None:
     font = ImageFont.load_default()
-    class_name = str(row.get("class_name", row.get("target", "")))
-    if len(class_name) > 22:
-        class_name = class_name[:19] + "..."
+    max_chars = max(14, width // 6)
+    class_name = _short_text(row.get("class_name", row.get("target", "")), max_chars=max_chars - 4)
     lines = [
         f"id {row.get('sample_id', '?')}  y {row.get('target', '?')}",
-        class_name,
+        f"true: {class_name}",
         f"{method_column}: {_value_text(row.get(method_column))}",
     ]
+    lines.extend(_top_prediction_lines(row, max_chars=max_chars))
     for line_index, line in enumerate(lines):
-        draw.text((x + 4, y + 4 + line_index * 12), line[:40], fill=(20, 20, 20), font=font)
+        draw.text(
+            (x + 4, y + 4 + line_index * 12),
+            line[:max_chars],
+            fill=(20, 20, 20),
+            font=font,
+        )
 
 
 def _make_grid(
@@ -111,7 +137,8 @@ def _make_grid(
         return
 
     thumb_size = min(max(int(image_size), 96), 224)
-    label_height = 42
+    has_top_predictions = any(f"top{rank}_class" in rows.columns for rank in range(1, 6))
+    label_height = 106 if has_top_predictions else 42
     columns = min(5, len(rows))
     grid_rows = int(math.ceil(len(rows) / columns))
     pad = 8
