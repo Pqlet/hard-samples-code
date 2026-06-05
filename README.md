@@ -146,6 +146,93 @@ drive.mount("/content/drive")
   --top-k 128
 ```
 
+After training in Colab, copy-paste this to inspect the final ranked table:
+
+```python
+import pandas as pd
+
+output_dir = "/content/runs/stl10_resnet18"
+csv_path = f"{output_dir}/hard_samples.csv"
+
+df = pd.read_csv(csv_path)
+df.sort_values("hard_rank").head(20)[
+    [
+        "sample_id",
+        "source_index",
+        "target",
+        "class_name",
+        "image_path",
+        "forgetting_count",
+        "aum",
+        "std_true_prob",
+        "mean_margin",
+        "hard_rank",
+        "hard_rank_rankavg",
+        "hard_rank_zscore",
+        "hard_rank_forgetting_first",
+    ]
+]
+```
+
+Display the generated top-k grids in Colab:
+
+```python
+from IPython.display import Image, display
+from pathlib import Path
+
+output_dir = "/content/runs/stl10_resnet18"
+grid_dir = Path(output_dir) / "top_hard_samples"
+
+for path in sorted(grid_dir.glob("*.jpg")):
+    print(path.name)
+    display(Image(filename=str(path)))
+```
+
+Download all results from Colab:
+
+```python
+from google.colab import files
+
+output_dir = "/content/runs/stl10_resnet18"
+zip_path = "/content/hard_sample_results.zip"
+```
+
+```bash
+!zip -r /content/hard_sample_results.zip /content/runs/stl10_resnet18
+```
+
+```python
+files.download(zip_path)
+```
+
+If you used a different `--output-dir`, replace
+`/content/runs/stl10_resnet18` in the cells above. If your `--output-dir` is in
+Google Drive, the results are already saved there and do not need to be
+downloaded manually.
+
+Optional cleanlab post-processing in Colab, if you have out-of-fold predicted
+probabilities and feature embeddings ordered by `sample_id`:
+
+```bash
+!python -m hard_samples.score_cleanlab \
+  --hard-samples-csv /content/runs/stl10_resnet18/hard_samples.csv \
+  --pred-probs /content/artifacts/oof_pred_probs.npy \
+  --features /content/artifacts/oof_features.npy \
+  --output-dir /content/runs/stl10_resnet18
+```
+
+Regenerate grids after cleanlab:
+
+```bash
+!python -m hard_samples.visualize_topk \
+  --input-csv /content/runs/stl10_resnet18/hard_samples.csv \
+  --output-dir /content/runs/stl10_resnet18/top_hard_samples \
+  --dataset stl10 \
+  --data-root /content/data \
+  --top-k 64 \
+  --image-size 224
+```
+
 ## Main Training And Scoring Command
 
 The main command trains a ResNet, evaluates every scored training sample after
